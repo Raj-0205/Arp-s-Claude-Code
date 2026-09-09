@@ -71,6 +71,73 @@ def test_model_mapping():
     assert args[0].original_model == "claude-3-haiku-20240307"
 
 
+def test_auth_header_model_override_nvidia():
+    """x-api-key: freecc:nvidia_nim/<model> overrides model and provider to nvidia_nim."""
+    _stream_response_calls.clear()
+    payload = {
+        "model": "claude-3-5-sonnet-20241022",
+        "messages": [{"role": "user", "content": "Hi"}],
+        "max_tokens": 100,
+        "stream": True,
+    }
+    headers = {"x-api-key": "freecc:nvidia_nim/meta/llama-3.3-70b-instruct"}
+    client.post("/v1/messages", json=payload, headers=headers)
+    assert len(_stream_response_calls) == 1
+    req = _stream_response_calls[0][0][0]
+    assert req.model == "meta/llama-3.3-70b-instruct"
+    assert req.resolved_provider_model == "nvidia_nim/meta/llama-3.3-70b-instruct"
+
+
+def test_auth_header_model_override_openrouter():
+    """x-api-key: freecc:open_router/<model> overrides model and provider to open_router."""
+    _stream_response_calls.clear()
+    payload = {
+        "model": "claude-3-5-sonnet-20241022",
+        "messages": [{"role": "user", "content": "Hi"}],
+        "max_tokens": 100,
+        "stream": True,
+    }
+    headers = {"x-api-key": "freecc:open_router/anthropic/claude-3.5-sonnet"}
+    client.post("/v1/messages", json=payload, headers=headers)
+    assert len(_stream_response_calls) == 1
+    req = _stream_response_calls[0][0][0]
+    assert req.model == "anthropic/claude-3.5-sonnet"
+    assert req.resolved_provider_model == "open_router/anthropic/claude-3.5-sonnet"
+
+
+def test_auth_header_bearer_override():
+    """Authorization: Bearer freecc:<model> overrides model and provider."""
+    _stream_response_calls.clear()
+    payload = {
+        "model": "claude-3-5-sonnet-20241022",
+        "messages": [{"role": "user", "content": "Hi"}],
+        "max_tokens": 100,
+        "stream": True,
+    }
+    headers = {"authorization": "Bearer freecc:open_router/stepfun/step-3.5-flash:free"}
+    client.post("/v1/messages", json=payload, headers=headers)
+    assert len(_stream_response_calls) == 1
+    req = _stream_response_calls[0][0][0]
+    assert req.model == "stepfun/step-3.5-flash:free"
+    assert req.resolved_provider_model == "open_router/stepfun/step-3.5-flash:free"
+
+
+def test_auth_header_legacy_unprefixed_uses_default_provider():
+    """x-api-key: freecc:<model> without provider prefix uses settings.provider_type."""
+    _stream_response_calls.clear()
+    payload = {
+        "model": "claude-3-5-sonnet-20241022",
+        "messages": [{"role": "user", "content": "Hi"}],
+        "max_tokens": 100,
+        "stream": True,
+    }
+    headers = {"x-api-key": "freecc:moonshotai/kimi-k2.5"}
+    client.post("/v1/messages", json=payload, headers=headers)
+    assert len(_stream_response_calls) == 1
+    req = _stream_response_calls[0][0][0]
+    assert req.model == "moonshotai/kimi-k2.5"
+
+
 def test_error_fallbacks():
     from providers.exceptions import (
         AuthenticationError,

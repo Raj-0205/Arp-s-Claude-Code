@@ -80,6 +80,87 @@ class TestSettings:
         settings = Settings()
         assert settings.provider_rate_window == 30
 
+    def test_nvidia_rate_limits_from_env(self, monkeypatch):
+        """NVIDIA_RATE_* env vars override defaults for nvidia_nim."""
+        from config.settings import Settings
+
+        monkeypatch.setenv("NVIDIA_RATE_LIMIT", "25")
+        monkeypatch.setenv("NVIDIA_RATE_WINDOW", "45")
+        monkeypatch.setenv("NVIDIA_MAX_CONCURRENCY", "3")
+        settings = Settings()
+
+        assert settings.get_rate_limit_for_provider("nvidia_nim") == 25
+        assert settings.get_rate_window_for_provider("nvidia_nim") == 45
+        assert settings.get_max_concurrency_for_provider("nvidia_nim") == 3
+
+        # Other providers fall back to standard provider defaults
+        assert (
+            settings.get_rate_limit_for_provider("open_router")
+            == settings.provider_rate_limit
+        )
+        assert (
+            settings.get_rate_window_for_provider("open_router")
+            == settings.provider_rate_window
+        )
+        assert (
+            settings.get_max_concurrency_for_provider("open_router")
+            == settings.provider_max_concurrency
+        )
+
+    def test_openrouter_rate_limits_from_env(self, monkeypatch):
+        """OPENROUTER_RATE_* env vars override defaults for open_router."""
+        from config.settings import Settings
+
+        monkeypatch.setenv("OPENROUTER_RATE_LIMIT", "15")
+        monkeypatch.setenv("OPENROUTER_RATE_WINDOW", "50")
+        monkeypatch.setenv("OPENROUTER_MAX_CONCURRENCY", "2")
+        settings = Settings()
+
+        assert settings.get_rate_limit_for_provider("open_router") == 15
+        assert settings.get_rate_window_for_provider("open_router") == 50
+        assert settings.get_max_concurrency_for_provider("open_router") == 2
+
+        # NVIDIA falls back to standard provider defaults
+        assert (
+            settings.get_rate_limit_for_provider("nvidia_nim")
+            == settings.provider_rate_limit
+        )
+
+    def test_provider_rate_limits_fallback_when_unset(self):
+        """When provider-specific settings are unset, fallback to PROVIDER_* values."""
+        from config.settings import Settings
+
+        settings = Settings(
+            provider_rate_limit=55,
+            provider_rate_window=75,
+            provider_max_concurrency=7,
+        )
+        assert settings.get_rate_limit_for_provider("nvidia_nim") == 55
+        assert settings.get_rate_window_for_provider("nvidia_nim") == 75
+        assert settings.get_max_concurrency_for_provider("nvidia_nim") == 7
+        assert settings.get_rate_limit_for_provider("open_router") == 55
+        assert settings.get_rate_window_for_provider("open_router") == 75
+        assert settings.get_max_concurrency_for_provider("open_router") == 7
+
+    def test_resolve_model_preserves_prefixed_models(self):
+        """Pre-resolved provider models are preserved without keyword re-mapping."""
+        from config.settings import Settings
+
+        settings = Settings(
+            model="nvidia_nim/meta/llama3-70b-instruct",
+            model_sonnet="open_router/arcee-ai/trinity",
+        )
+        # Even though "sonnet" is in the model name, pre-prefixed model is preserved
+        resolved = settings.resolve_model("open_router/anthropic/claude-3.5-sonnet")
+        assert resolved == "open_router/anthropic/claude-3.5-sonnet"
+
+        resolved_nim = settings.resolve_model("nvidia_nim/meta/llama-3.3-70b-instruct")
+        assert resolved_nim == "nvidia_nim/meta/llama-3.3-70b-instruct"
+
+        # Plain claude model name still maps through model_sonnet
+        resolved_claude = settings.resolve_model("claude-3-5-sonnet-20241022")
+        assert resolved_claude == "open_router/arcee-ai/trinity"
+
     def test_http_read_timeout_from_env(self, monkeypatch):
         """HTTP_READ_TIMEOUT env var is loaded into settings."""
         from config.settings import Settings

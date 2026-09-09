@@ -4,18 +4,20 @@ import time
 import pytest
 import pytest_asyncio
 
-from providers.rate_limit import GlobalRateLimiter
+from providers.rate_limit import GlobalRateLimiter, ProviderRateLimiter
 
 
 class TestProviderRateLimiter:
-    """Tests for providers.rate_limit.GlobalRateLimiter."""
+    """Tests for providers.rate_limit.GlobalRateLimiter and ProviderRateLimiter."""
 
     @pytest_asyncio.fixture(autouse=True)
     async def reset_limiter(self):
-        """Reset singleton before each test."""
+        """Reset singletons before each test."""
         GlobalRateLimiter.reset_instance()
+        ProviderRateLimiter.reset_all()
         yield
         GlobalRateLimiter.reset_instance()
+        ProviderRateLimiter.reset_all()
 
     @pytest.mark.asyncio
     async def test_proactive_throttling(self):
@@ -315,3 +317,117 @@ class TestProviderRateLimiter:
         )
         assert limiter._concurrency_sem is not None
         assert limiter._concurrency_sem._value == 3
+
+    @pytest.mark.asyncio
+    async def test_provider_limiter_distinct_instances(self):
+        """NVIDIA NIM and OpenRouter must receive completely separate limiter instances."""
+        nim_limiter = ProviderRateLimiter.get_instance("nvidia_nim", rate_limit=40)
+        or_limiter = ProviderRateLimiter.get_instance("open_router", rate_limit=20)
+        lms_limiter = ProviderRateLimiter.get_instance("lmstudio", rate_limit=100)
+
+        assert nim_limiter is not or_limiter
+        assert nim_limiter is not lms_limiter
+        assert or_limiter is not lms_limiter
+
+        # Re-fetching returns the same instance for that provider
+        assert ProviderRateLimiter.get_instance("nvidia_nim") is nim_limiter
+        assert ProviderRateLimiter.get_instance("open_router") is or_limiter
+        assert ProviderRateLimiter.get_instance("lmstudio") is lms_limiter
+
+    @pytest.mark.asyncio
+    async def test_nvidia_429_does_not_block_openrouter(self):
+        """A 429 on NVIDIA NIM must NOT block OpenRouter requests."""
+        nim_limiter = ProviderRateLimiter.get_instance("nvidia_nim")
+        or_limiter = ProviderRateLimiter.get_instance("open_router")
+
+        # Simulate NVIDIA hitting a 429 and getting blocked for 60 seconds
+        nim_limiter.set_blocked(60.0)
+
+        assert nim_limiter.is_blocked() is True
+        assert nim_limiter.remaining_wait() > 50.0
+
+        # OpenRouter must remain completely unblocked
+        assert or_limiter.is_blocked() is False
+        assert or_limiter.remaining_wait() == 0.0
+
+        # wait_if_blocked on OpenRouter must return False immediately without sleeping
+        start = time.monotonic()
+        waited = await or_limiter.wait_if_blocked()
+        elapsed = time.monotonic() - start
+
+        assert waited is False
+        assert elapsed < 0.1
+
+    @pytest.mark.asyncio
+    async def test_openrouter_429_does_not_block_nvidia(self):
+        """A 429 on OpenRouter must NOT block NVIDIA NIM requests."""
+        nim_limiter = ProviderRateLimiter.get_instance("nvidia_nim")
+        or_limiter = ProviderRateLimiter.get_instance("open_router")
+
+        # Simulate OpenRouter hitting a 429
+        or_limiter.set_blocked(60.0)
+
+        assert or_limiter.is_blocked() is True
+        assert or_limiter.remaining_wait() > 50.0
+
+        # NVIDIA must remain completely unblocked
+        assert nim_limiter.is_blocked() is False
+        assert nim_limiter.remaining_wait() == 0.0
+
+        start = time.monotonic()
+        waited = await nim_limiter.wait_if_blocked()
+        elapsed = time.monotonic() - start
+
+        assert waited is False
+        assert elapsed < 0.1
+
+    @pytest.mark.asyncio
+    async def test_provider_concurrency_isolation(self):
+        """NVIDIA occupying all concurrency slots must NOT block OpenRouter concurrency slots."""
+        nim_limiter = ProviderRateLimiter.get_instance("nvidia_nim", max_concurrency=1)
+        or_limiter = ProviderRateLimiter.get_instance("open_router", max_concurrency=1)
+
+        async with nim_limiter.concurrency_slot():
+            # NVIDIA slot is held; attempting another slot on NVIDIA would wait
+            assert nim_limiter._concurrency_sem.locked() is True
+
+            # OpenRouter slot should still be immediately available
+            assert or_limiter._concurrency_sem.locked() is False
+            acquired_openrouter = False
+            async with or_limiter.concurrency_slot():
+                acquired_openrouter = True
+            assert acquired_openrouter is True
+
+    @pytest.mark.asyncio
+    async def test_provider_reset_specific_and_all(self):
+        """Resetting a specific provider keeps other providers; reset_all resets everything."""
+        nim1 = ProviderRateLimiter.get_instance("nvidia_nim")
+        or1 = ProviderRateLimiter.get_instance("open_router")
+
+        # Reset only nvidia
+        ProviderRateLimiter.reset_instance("nvidia_nim")
+        nim2 = ProviderRateLimiter.get_instance("nvidia_nim")
+        or2 = ProviderRateLimiter.get_instance("open_router")
+
+        assert nim1 is not nim2
+        assert or1 is or2
+
+        # Reset all
+        ProviderRateLimiter.reset_all()
+        or3 = ProviderRateLimiter.get_instance("open_router")
+        assert or1 is not or3
+
+    def test_provider_name_normalization(self):
+        """Various aliases map to canonical provider names."""
+        assert ProviderRateLimiter.normalize_provider_name("nim") == "nvidia_nim"
+        assert ProviderRateLimiter.normalize_provider_name("NVIDIA") == "nvidia_nim"
+        assert ProviderRateLimiter.normalize_provider_name("nvidia_nim") == "nvidia_nim"
+        assert (
+            ProviderRateLimiter.normalize_provider_name("openrouter") == "open_router"
+        )
+        assert (
+            ProviderRateLimiter.normalize_provider_name("OPEN_ROUTER") == "open_router"
+        )
+        assert ProviderRateLimiter.normalize_provider_name("lmstudio") == "lmstudio"
+        assert ProviderRateLimiter.normalize_provider_name("LM_STUDIO") == "lmstudio"
+        assert ProviderRateLimiter.normalize_provider_name("lm-studio") == "lmstudio"

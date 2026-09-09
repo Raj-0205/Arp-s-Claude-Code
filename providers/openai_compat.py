@@ -21,7 +21,7 @@ from providers.common import (
     map_error,
     map_stop_reason,
 )
-from providers.rate_limit import GlobalRateLimiter
+from providers.rate_limit import GlobalRateLimiter, ProviderRateLimiter
 
 
 class OpenAICompatibleProvider(BaseProvider):
@@ -41,11 +41,25 @@ class OpenAICompatibleProvider(BaseProvider):
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
         self._nim_settings = nim_settings
-        self._global_rate_limiter = GlobalRateLimiter.get_instance(
-            rate_limit=config.rate_limit,
-            rate_window=config.rate_window,
-            max_concurrency=config.max_concurrency,
-        )
+
+        # Backward compatibility for existing tests patching GlobalRateLimiter
+        if (
+            isinstance(GlobalRateLimiter, type)
+            and getattr(GlobalRateLimiter, "__module__", "") == "providers.rate_limit"
+        ):
+            self._rate_limiter = ProviderRateLimiter.get_instance(
+                provider_name=provider_name,
+                rate_limit=config.rate_limit,
+                rate_window=config.rate_window,
+                max_concurrency=config.max_concurrency,
+            )
+        else:
+            self._rate_limiter = GlobalRateLimiter.get_instance(
+                rate_limit=config.rate_limit,
+                rate_window=config.rate_window,
+                max_concurrency=config.max_concurrency,
+            )
+        self._global_rate_limiter = self._rate_limiter
         self._client = AsyncOpenAI(
             api_key=self._api_key,
             base_url=self._base_url,
@@ -159,9 +173,9 @@ class OpenAICompatibleProvider(BaseProvider):
         error_occurred = False
         error_message = ""
 
-        async with self._global_rate_limiter.concurrency_slot():
+        async with self._rate_limiter.concurrency_slot():
             try:
-                stream = await self._global_rate_limiter.execute_with_retry(
+                stream = await self._rate_limiter.execute_with_retry(
                     self._client.chat.completions.create, **body, stream=True
                 )
                 async for chunk in stream:
@@ -248,7 +262,7 @@ class OpenAICompatibleProvider(BaseProvider):
 
             except Exception as e:
                 logger.error("{}_ERROR:{} {}: {}", tag, req_tag, type(e).__name__, e)
-                mapped_e = map_error(e)
+                mapped_e = map_error(e, rate_limiter=self._rate_limiter)
                 error_occurred = True
                 error_message = append_request_id(
                     get_user_facing_error_message(

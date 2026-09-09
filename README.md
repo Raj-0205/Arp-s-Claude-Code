@@ -158,9 +158,9 @@ To switch back to Anthropic models, comment out the added block and reload exten
 </details>
 
 <details>
-<summary><b>Multi-Model Support (Model Picker)</b></summary>
+<summary><b>Multi-Model Support (Unified Model Picker)</b></summary>
 
-`claude-pick` is an interactive model selector that lets you choose any model from your active provider each time you launch Claude, without editing `MODEL` in `.env`.
+`claude-pick` is an interactive model selector that displays models from **both NVIDIA NIM and OpenRouter** side-by-side with clear provider labels (e.g. `NVIDIA | <model>`, `OpenRouter | <model>`). When a model is selected, its provider prefix is preserved (`nvidia_nim/<model>` or `open_router/<model>`) and Claude Code launches through the proxy with that exact model. If one provider is unavailable or lacks credentials, the picker gracefully falls back to displaying the available provider's models.
 
 https://github.com/user-attachments/assets/9a33c316-90f8-4418-9650-97e7d33ad645
 
@@ -407,9 +407,11 @@ Browse: [model.lmstudio.ai](https://model.lmstudio.ai)
 | `NVIDIA_NIM_API_KEY`              | NVIDIA API key (NIM provider)                                                      | required                                          |
 | `OPENROUTER_API_KEY`              | OpenRouter API key (OpenRouter provider)                                           | required                                          |
 | `LM_STUDIO_BASE_URL`              | LM Studio server URL                                                               | `http://localhost:1234/v1`                        |
-| `PROVIDER_RATE_LIMIT`             | LLM API requests per window                                                        | `40`                                              |
-| `PROVIDER_RATE_WINDOW`            | Rate limit window (seconds)                                                        | `60`                                              |
-| `PROVIDER_MAX_CONCURRENCY`        | Max simultaneous open provider streams                                             | `5`                                               |
+| `PROVIDER_RATE_LIMIT`             | Default LLM API requests per window                                                | `40`                                              |
+| `PROVIDER_RATE_WINDOW`            | Default rate limit window (seconds)                                                | `60`                                              |
+| `PROVIDER_MAX_CONCURRENCY`        | Default max simultaneous open provider streams                                     | `5`                                               |
+| `NVIDIA_RATE_LIMIT` / `_WINDOW` / `_MAX_CONCURRENCY` | Optional NVIDIA NIM rate limit overrides (isolated limiter)     | (falls back to `PROVIDER_*`)                      |
+| `OPENROUTER_RATE_LIMIT` / `_WINDOW` / `_MAX_CONCURRENCY` | Optional OpenRouter rate limit overrides (isolated limiter) | (falls back to `PROVIDER_*`)                      |
 | `HTTP_READ_TIMEOUT`               | Read timeout for provider API requests (seconds)                                   | `120`                                             |
 | `HTTP_WRITE_TIMEOUT`              | Write timeout for provider API requests (seconds)                                  | `10`                                              |
 | `HTTP_CONNECT_TIMEOUT`            | Connect timeout for provider API requests (seconds)                                | `2`                                               |

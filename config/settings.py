@@ -49,6 +49,27 @@ class Settings(BaseSettings):
         default=5, validation_alias="PROVIDER_MAX_CONCURRENCY"
     )
 
+    # Optional provider-specific rate limits (fallback to PROVIDER_* if not set)
+    nvidia_rate_limit: int | None = Field(
+        default=None, validation_alias="NVIDIA_RATE_LIMIT"
+    )
+    nvidia_rate_window: int | None = Field(
+        default=None, validation_alias="NVIDIA_RATE_WINDOW"
+    )
+    nvidia_max_concurrency: int | None = Field(
+        default=None, validation_alias="NVIDIA_MAX_CONCURRENCY"
+    )
+
+    openrouter_rate_limit: int | None = Field(
+        default=None, validation_alias="OPENROUTER_RATE_LIMIT"
+    )
+    openrouter_rate_window: int | None = Field(
+        default=None, validation_alias="OPENROUTER_RATE_WINDOW"
+    )
+    openrouter_max_concurrency: int | None = Field(
+        default=None, validation_alias="OPENROUTER_MAX_CONCURRENCY"
+    )
+
     # ==================== HTTP Client Timeouts ====================
     http_read_timeout: float = Field(
         default=300.0, validation_alias="HTTP_READ_TIMEOUT"
@@ -170,12 +191,62 @@ class Settings(BaseSettings):
         """Extract the actual model name from the default model string."""
         return self.model.split("/", 1)[1]
 
+    def get_rate_limit_for_provider(self, provider_type: str) -> int:
+        """Get effective rate limit for provider, falling back to PROVIDER_RATE_LIMIT."""
+        pt = provider_type.lower()
+        if pt in ("nvidia_nim", "nvidia", "nim") and self.nvidia_rate_limit is not None:
+            return self.nvidia_rate_limit
+        if (
+            pt in ("open_router", "openrouter")
+            and self.openrouter_rate_limit is not None
+        ):
+            return self.openrouter_rate_limit
+        return self.provider_rate_limit
+
+    def get_rate_window_for_provider(self, provider_type: str) -> int:
+        """Get effective rate window for provider, falling back to PROVIDER_RATE_WINDOW."""
+        pt = provider_type.lower()
+        if (
+            pt in ("nvidia_nim", "nvidia", "nim")
+            and self.nvidia_rate_window is not None
+        ):
+            return self.nvidia_rate_window
+        if (
+            pt in ("open_router", "openrouter")
+            and self.openrouter_rate_window is not None
+        ):
+            return self.openrouter_rate_window
+        return self.provider_rate_window
+
+    def get_max_concurrency_for_provider(self, provider_type: str) -> int:
+        """Get effective max concurrency for provider, falling back to PROVIDER_MAX_CONCURRENCY."""
+        pt = provider_type.lower()
+        if (
+            pt in ("nvidia_nim", "nvidia", "nim")
+            and self.nvidia_max_concurrency is not None
+        ):
+            return self.nvidia_max_concurrency
+        if (
+            pt in ("open_router", "openrouter")
+            and self.openrouter_max_concurrency is not None
+        ):
+            return self.openrouter_max_concurrency
+        return self.provider_max_concurrency
+
     def resolve_model(self, claude_model_name: str) -> str:
         """Resolve a Claude model name to the configured provider/model string.
 
         Classifies the incoming Claude model (opus/sonnet/haiku) and
         returns the model-specific override if configured, otherwise the fallback MODEL.
+        If the model name is already a prefixed provider model, it is preserved.
         """
+        valid_providers = ("nvidia_nim", "open_router", "lmstudio")
+        if (
+            "/" in claude_model_name
+            and claude_model_name.split("/", 1)[0] in valid_providers
+        ):
+            return claude_model_name
+
         name_lower = claude_model_name.lower()
         if "opus" in name_lower and self.model_opus is not None:
             return self.model_opus
@@ -199,6 +270,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
+        populate_by_name=True,
     )
 
 

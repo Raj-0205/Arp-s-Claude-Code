@@ -11,7 +11,7 @@ from providers.exceptions import (
     ProviderError,
     RateLimitError,
 )
-from providers.rate_limit import GlobalRateLimiter
+from providers.rate_limit import BaseRateLimiter, GlobalRateLimiter
 
 
 def get_user_facing_error_message(
@@ -61,14 +61,19 @@ def append_request_id(message: str, request_id: str | None) -> str:
     return base
 
 
-def map_error(e: Exception) -> Exception:
+def map_error(
+    e: Exception,
+    *,
+    rate_limiter: BaseRateLimiter | None = None,
+) -> Exception:
     """Map OpenAI exception to specific ProviderError."""
     message = get_user_facing_error_message(e)
     if isinstance(e, openai.AuthenticationError):
         return AuthenticationError(message, raw_error=str(e))
     if isinstance(e, openai.RateLimitError):
-        # Trigger global rate limit block
-        GlobalRateLimiter.get_instance().set_blocked(60)  # Default 60s cooldown
+        # Trigger provider or global rate limit block
+        limiter = rate_limiter or GlobalRateLimiter.get_instance()
+        limiter.set_blocked(60)  # Default 60s cooldown
         return RateLimitError(message, raw_error=str(e))
     if isinstance(e, openai.BadRequestError):
         return InvalidRequestError(message, raw_error=str(e))

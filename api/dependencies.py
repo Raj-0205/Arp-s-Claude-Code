@@ -21,8 +21,28 @@ def get_settings() -> Settings:
     return _get_settings()
 
 
+def _get_provider_limits(
+    settings: Settings, provider_type: str
+) -> tuple[int, int, int]:
+    """Get (rate_limit, rate_window, max_concurrency) for provider with fallback."""
+    if hasattr(settings, "get_rate_limit_for_provider"):
+        rl = settings.get_rate_limit_for_provider(provider_type)
+        rw = settings.get_rate_window_for_provider(provider_type)
+        mc = settings.get_max_concurrency_for_provider(provider_type)
+        return rl, rw, mc
+    return (
+        getattr(settings, "provider_rate_limit", 40),
+        getattr(settings, "provider_rate_window", 60),
+        getattr(settings, "provider_max_concurrency", 5),
+    )
+
+
 def _create_provider_for_type(provider_type: str, settings: Settings) -> BaseProvider:
     """Construct and return a new provider instance for the given provider type."""
+    rate_limit, rate_window, max_concurrency = _get_provider_limits(
+        settings, provider_type
+    )
+
     if provider_type == "nvidia_nim":
         if not settings.nvidia_nim_api_key or not settings.nvidia_nim_api_key.strip():
             raise AuthenticationError(
@@ -32,9 +52,9 @@ def _create_provider_for_type(provider_type: str, settings: Settings) -> BasePro
         config = ProviderConfig(
             api_key=settings.nvidia_nim_api_key,
             base_url=NVIDIA_NIM_BASE_URL,
-            rate_limit=settings.provider_rate_limit,
-            rate_window=settings.provider_rate_window,
-            max_concurrency=settings.provider_max_concurrency,
+            rate_limit=rate_limit,
+            rate_window=rate_window,
+            max_concurrency=max_concurrency,
             http_read_timeout=settings.http_read_timeout,
             http_write_timeout=settings.http_write_timeout,
             http_connect_timeout=settings.http_connect_timeout,
@@ -49,9 +69,9 @@ def _create_provider_for_type(provider_type: str, settings: Settings) -> BasePro
         config = ProviderConfig(
             api_key=settings.open_router_api_key,
             base_url=OPENROUTER_BASE_URL,
-            rate_limit=settings.provider_rate_limit,
-            rate_window=settings.provider_rate_window,
-            max_concurrency=settings.provider_max_concurrency,
+            rate_limit=rate_limit,
+            rate_window=rate_window,
+            max_concurrency=max_concurrency,
             http_read_timeout=settings.http_read_timeout,
             http_write_timeout=settings.http_write_timeout,
             http_connect_timeout=settings.http_connect_timeout,
@@ -61,9 +81,9 @@ def _create_provider_for_type(provider_type: str, settings: Settings) -> BasePro
         config = ProviderConfig(
             api_key="lm-studio",
             base_url=settings.lm_studio_base_url,
-            rate_limit=settings.provider_rate_limit,
-            rate_window=settings.provider_rate_window,
-            max_concurrency=settings.provider_max_concurrency,
+            rate_limit=rate_limit,
+            rate_window=rate_window,
+            max_concurrency=max_concurrency,
             http_read_timeout=settings.http_read_timeout,
             http_write_timeout=settings.http_write_timeout,
             http_connect_timeout=settings.http_connect_timeout,

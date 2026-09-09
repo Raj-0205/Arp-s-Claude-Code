@@ -22,6 +22,21 @@ from .request_utils import get_token_count
 router = APIRouter()
 
 
+def _extract_model_from_auth_headers(raw_request: Request) -> str | None:
+    """Extract model override from x-api-key or authorization header if prefixed with freecc:."""
+    token = raw_request.headers.get("x-api-key")
+    if not token:
+        auth_header = raw_request.headers.get("authorization", "")
+        if auth_header.lower().startswith("bearer "):
+            token = auth_header[7:].strip()
+
+    if token and token.startswith("freecc:"):
+        model_part = token[len("freecc:") :].strip()
+        if model_part:
+            return model_part
+    return None
+
+
 # =============================================================================
 # Routes
 # =============================================================================
@@ -36,6 +51,17 @@ async def create_message(
     try:
         if not request_data.messages:
             raise InvalidRequestError("messages cannot be empty")
+
+        # Check for model override from auth token (e.g. launched via claude-pick or custom ANTHROPIC_AUTH_TOKEN)
+        header_model = _extract_model_from_auth_headers(raw_request)
+        if header_model:
+            valid_providers = ("nvidia_nim", "open_router", "lmstudio")
+            if "/" in header_model and header_model.split("/", 1)[0] in valid_providers:
+                resolved_full = header_model
+            else:
+                resolved_full = f"{settings.provider_type}/{header_model}"
+            request_data.resolved_provider_model = resolved_full
+            request_data.model = Settings.parse_model_name(resolved_full)
 
         optimized = try_optimizations(request_data, settings)
         if optimized is not None:
