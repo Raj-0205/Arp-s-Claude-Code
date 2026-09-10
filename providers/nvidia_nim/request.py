@@ -75,6 +75,8 @@ def build_request_body(request_data: Any, nim: NimSettings) -> dict:
         extra_body.pop("reasoning_split", None)
         extra_body.pop("include_reasoning", None)
         extra_body.pop("chat_template_kwargs", None)
+        # Kimi K3 requires top_p=0.95 exactly; NVIDIA rejects any other value.
+        body["top_p"] = 0.95
     else:
         extra_body.setdefault("thinking", {"type": "enabled"})
         extra_body.setdefault("reasoning_split", True)

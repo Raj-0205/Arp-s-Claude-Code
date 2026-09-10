@@ -113,6 +113,9 @@ async def test_build_request_body(nim_provider):
     assert body["extra_body"]["reasoning_split"] is True
     assert body["extra_body"]["include_reasoning"] is True
 
+    # Non-Kimi models preserve the request's top_p value
+    assert body["top_p"] == 0.9
+
 
 @pytest.mark.asyncio
 async def test_build_request_body_kimi_k3(nim_provider):
@@ -133,6 +136,9 @@ async def test_build_request_body_kimi_k3(nim_provider):
 
     # Model-agnostic params should still be present
     assert extra["reasoning_effort"] == "high"
+
+    # Kimi K3 requires top_p=0.95 regardless of incoming request value
+    assert body["top_p"] == 0.95
 
 
 @pytest.mark.asyncio
