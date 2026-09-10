@@ -55,7 +55,7 @@ class SystemContent(BaseModel):
 # Message Types
 # =============================================================================
 class Message(BaseModel):
-    role: Literal["user", "assistant"]
+    role: Role
     content: (
         str
         | list[

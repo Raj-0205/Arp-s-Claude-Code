@@ -161,3 +161,9 @@ def test_token_count_request_model_aware():
             messages=[Message(role="user", content="hello")],
         )
         assert request.model == "qwen2.5-7b"
+
+
+def test_message_accepts_system_role():
+    message = Message(role="system", content="You are Claude Code.")
+
+    assert message.role == "system"
