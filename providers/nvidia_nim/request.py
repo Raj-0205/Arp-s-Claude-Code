@@ -63,18 +63,30 @@ def build_request_body(request_data: Any, nim: NimSettings) -> dict:
     if request_extra:
         extra_body.update(request_extra)
 
-    # Handle thinking/reasoning mode
-    extra_body.setdefault("thinking", {"type": "enabled"})
-    extra_body.setdefault("reasoning_split", True)
-    extra_body.setdefault(
-        "chat_template_kwargs",
-        {
-            "thinking": True,
-            "enable_thinking": True,
-            "reasoning_split": True,
-            "clear_thinking": False,
-        },
-    )
+    # Handle thinking/reasoning mode.
+    # Kimi-K3 emits reasoning_content natively and its NVIDIA endpoint
+    # rejects the legacy include_reasoning/reasoning_split parameters.
+    is_kimi_k3 = body.get("model") == "moonshotai/kimi-k3"
+
+    if is_kimi_k3:
+        # Kimi K3 exposes reasoning_content natively.
+        # NVIDIA rejects these legacy reasoning controls.
+        extra_body.pop("thinking", None)
+        extra_body.pop("reasoning_split", None)
+        extra_body.pop("include_reasoning", None)
+        extra_body.pop("chat_template_kwargs", None)
+    else:
+        extra_body.setdefault("thinking", {"type": "enabled"})
+        extra_body.setdefault("reasoning_split", True)
+        extra_body.setdefault(
+            "chat_template_kwargs",
+            {
+                "thinking": True,
+                "enable_thinking": True,
+                "reasoning_split": True,
+                "clear_thinking": False,
+            },
+        )
 
     req_top_k = getattr(request_data, "top_k", None)
     top_k = req_top_k if req_top_k is not None else nim.top_k
@@ -90,7 +102,8 @@ def build_request_body(request_data: Any, nim: NimSettings) -> dict:
     _set_extra(extra_body, "include_stop_str_in_output", nim.include_stop_str_in_output)
     _set_extra(extra_body, "ignore_eos", nim.ignore_eos)
     _set_extra(extra_body, "reasoning_effort", nim.reasoning_effort)
-    _set_extra(extra_body, "include_reasoning", nim.include_reasoning)
+    if not is_kimi_k3:
+        _set_extra(extra_body, "include_reasoning", nim.include_reasoning)
 
     if extra_body:
         body["extra_body"] = extra_body

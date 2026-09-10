@@ -106,7 +106,33 @@ async def test_build_request_body(nim_provider):
     ctk = body["extra_body"]["chat_template_kwargs"]
     assert ctk["thinking"] is True
     assert ctk["enable_thinking"] is True
+    assert ctk["reasoning_split"] is True
     assert ctk["clear_thinking"] is False
+
+    # Non-Kimi models must include reasoning controls
+    assert body["extra_body"]["reasoning_split"] is True
+    assert body["extra_body"]["include_reasoning"] is True
+
+
+@pytest.mark.asyncio
+async def test_build_request_body_kimi_k3(nim_provider):
+    """Kimi K3 must not include unsupported reasoning params."""
+    req = MockRequest(model="moonshotai/kimi-k3")
+    body = nim_provider._build_request_body(req)
+
+    extra = body.get("extra_body", {})
+
+    # Kimi K3 rejects these — they must be absent
+    for key in (
+        "thinking",
+        "reasoning_split",
+        "include_reasoning",
+        "chat_template_kwargs",
+    ):
+        assert key not in extra, f"{key} must not be in extra_body for Kimi K3"
+
+    # Model-agnostic params should still be present
+    assert extra["reasoning_effort"] == "high"
 
 
 @pytest.mark.asyncio

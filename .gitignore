@@ -9,3 +9,8 @@ agent_workspace
 .env
 server.log
 .coverage
+# Backup files
+*.backup*
+*.bak
+*.orig
+.env.*
